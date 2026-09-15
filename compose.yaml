@@ -11,5 +11,15 @@ services:
       - "5173:5173"
     command: npm run dev
 
+  shot:
+    # 스크린샷 전용. 이미지 버전은 package.json의 playwright 버전과 같아야 한다.
+    image: mcr.microsoft.com/playwright:v1.63.0-noble
+    working_dir: /app
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    ipc: host
+    command: npm run shot
+
 volumes:
   node_modules:
