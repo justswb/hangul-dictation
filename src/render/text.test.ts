@@ -1,8 +1,16 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { composeSyllable } from '../glyphs/hangul/compose.ts';
+import { parseJhf } from '../glyphs/latin/hershey.ts';
 import { textToStrokes } from './text.ts';
 
 const OPTS = { x: 10, y: 20, height: 80, color: 'black' as const, width: 4 };
+
+// text.ts와 별개로 폰트를 직접 파싱해 advance('A')를 구한다(0.75 배율을 실제로 검증하기 위함).
+const FONT_PATH = fileURLToPath(new URL('../../assets/hershey/futural.jhf', import.meta.url));
+const latinGlyphs = parseJhf(readFileSync(FONT_PATH, 'utf8'));
+const ADVANCE_A = latinGlyphs.get('A')?.advance ?? Number.NaN;
 
 describe('textToStrokes', () => {
   it("획 수 = composeSyllable('가') 획 수", () => {
@@ -18,11 +26,8 @@ describe('textToStrokes', () => {
   });
 
   it("width('A') = 0.75 × height × advance('A')", () => {
-    const glyphs = textToStrokes('A', OPTS);
-    // advance('A')를 역산: width = 0.75*height*advance 이므로 advance = width/(0.75*height).
-    const advance = glyphs.width / (0.75 * OPTS.height);
-    const again = textToStrokes('A', { ...OPTS, height: OPTS.height * 2 });
-    expect(again.width).toBeCloseTo(0.75 * OPTS.height * 2 * advance, 5);
+    const { width } = textToStrokes('A', OPTS);
+    expect(width).toBeCloseTo(0.75 * OPTS.height * ADVANCE_A, 5);
   });
 
   it('모든 점이 [x, x+width] × [y, y+height] 안', () => {
