@@ -38,6 +38,10 @@ export function createAnimator(canvas: HTMLCanvasElement, scheduler: Scheduler, 
   const completedCtx: CanvasRenderingContext2D = rawCompletedCtx;
 
   let partialStroke: DrawStroke | null = null;
+  // 마지막으로 onIdle을 통지한 상태(중복 통지를 막기 위해 전이 시점만 잡는다).
+  let idleNotified = true;
+  const groupDoneCallbacks: Array<(groupId: string) => void> = [];
+  const idleCallbacks: Array<() => void> = [];
 
   function render(): void {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -45,10 +49,30 @@ export function createAnimator(canvas: HTMLCanvasElement, scheduler: Scheduler, 
     if (partialStroke) drawStroke(ctx, partialStroke);
   }
 
+  function notifyGroupsDone(groupsDone: string[]): void {
+    for (const groupId of groupsDone) {
+      for (const cb of groupDoneCallbacks) cb(groupId);
+    }
+  }
+
+  // idle 상태로 "전이"하는 순간에만 onIdle을 호출한다.
+  function notifyIdle(isIdle: boolean): void {
+    if (isIdle) {
+      if (!idleNotified) {
+        idleNotified = true;
+        for (const cb of idleCallbacks) cb();
+      }
+    } else {
+      idleNotified = false;
+    }
+  }
+
   function advance(dtMs: number): void {
-    const { completed, partial } = scheduler.tick(dtMs);
+    const { completed, partial, groupsDone, idle } = scheduler.tick(dtMs);
     for (const stroke of completed) drawStroke(completedCtx, stroke);
     partialStroke = partial;
+    notifyGroupsDone(groupsDone);
+    notifyIdle(idle);
   }
 
   let lastTimestamp: number | null = null;
@@ -64,6 +88,7 @@ export function createAnimator(canvas: HTMLCanvasElement, scheduler: Scheduler, 
   return {
     enqueue(strokes: DrawStroke[], groupId: string): void {
       scheduler.enqueue(strokes, groupId);
+      if (strokes.length > 0) idleNotified = false;
       if (instant) {
         // 큐에 쌓인 모든 획을 한 번에 완성 처리한다.
         advance(Infinity);
@@ -71,18 +96,24 @@ export function createAnimator(canvas: HTMLCanvasElement, scheduler: Scheduler, 
       }
     },
     stop(): void {
-      // T17에서 구현
+      const finalized = scheduler.stop();
+      if (finalized) drawStroke(completedCtx, finalized);
+      partialStroke = null;
+      render();
+      notifyIdle(true);
     },
     clear(): void {
-      // T17에서 구현
+      scheduler.clear();
+      partialStroke = null;
+      completedCtx.clearRect(0, 0, completedLayer.width, completedLayer.height);
+      render();
+      notifyIdle(true);
     },
     onGroupDone(cb: (groupId: string) => void): void {
-      void cb;
-      // T17에서 구현
+      groupDoneCallbacks.push(cb);
     },
     onIdle(cb: () => void): void {
-      void cb;
-      // T17에서 구현
+      idleCallbacks.push(cb);
     },
   };
 }

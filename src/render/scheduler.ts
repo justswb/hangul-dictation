@@ -3,8 +3,19 @@ import type { DrawStroke, Point } from '../contracts/stroke.ts';
 /** createScheduler 옵션. speed는 초당 이동 거리(px/s). */
 export type SchedulerOptions = { speed?: number };
 
-/** 한 틱의 결과. completed는 이번 틱에 새로 완성된 획, partial은 그리는 중인 획(앞부분만 자른 점 목록). */
-export type TickResult = { completed: DrawStroke[]; partial: DrawStroke | null };
+/**
+ * 한 틱의 결과.
+ * - completed: 이번 틱에 새로 완성된 획
+ * - partial: 그리는 중인 획(앞부분만 자른 점 목록)
+ * - groupsDone: 이번 틱에 마지막 획까지 완성되어 끝난 groupId 목록 (완료 순서대로)
+ * - idle: 이번 틱 이후 큐가 비고 진행 중인 획도 없는지 여부
+ */
+export type TickResult = {
+  completed: DrawStroke[];
+  partial: DrawStroke | null;
+  groupsDone: string[];
+  idle: boolean;
+};
 
 /** 획을 큐 순서대로 시간에 따라 진행시키는 순수 스케줄러. */
 export interface Scheduler {
@@ -12,6 +23,14 @@ export interface Scheduler {
   enqueue(strokes: DrawStroke[], groupId: string): void;
   /** dtMs(ms)만큼 시간을 진행시키고 결과를 반환한다. */
   tick(dtMs: number): TickResult;
+  /**
+   * 진행 중인 획을 현재 지점에서 멈춘 모양 그대로 확정해 반환하고 큐를 비운다.
+   * 진행 중인 획이 없으면(그리기 시작 전이거나 큐가 비어 있으면) null을 반환한다.
+   * 반환된 획은 groupsDone 대상이 아니다(중간에 끊긴 그룹이므로).
+   */
+  stop(): DrawStroke | null;
+  /** 큐를 비운다. (캔버스를 지우는 것은 호출하는 쪽의 책임이다.) */
+  clear(): void;
 }
 
 /** 점 배열의 총 길이(점 간 거리 합). */
@@ -69,6 +88,7 @@ export function createScheduler({ speed = 900 }: SchedulerOptions = {}): Schedul
   function tick(dtMs: number): TickResult {
     let distance = speed * (dtMs / 1000);
     const completed: DrawStroke[] = [];
+    const groupsDone: string[] = [];
 
     while (distance > 0 && queue.length > 0) {
       const item = queue[0];
@@ -79,6 +99,10 @@ export function createScheduler({ speed = 900 }: SchedulerOptions = {}): Schedul
         distance -= remaining;
         queue.shift();
         drawnLength = 0;
+        const next = queue[0];
+        if (!next || next.stroke.groupId !== item.stroke.groupId) {
+          groupsDone.push(item.stroke.groupId);
+        }
       } else {
         drawnLength += distance;
         distance = 0;
@@ -91,8 +115,26 @@ export function createScheduler({ speed = 900 }: SchedulerOptions = {}): Schedul
       partial = { ...head.stroke, points: takeDistance(head.stroke.points, drawnLength) };
     }
 
-    return { completed, partial };
+    const idle = queue.length === 0 && drawnLength === 0;
+
+    return { completed, partial, groupsDone, idle };
   }
 
-  return { enqueue, tick };
+  function stop(): DrawStroke | null {
+    const head = queue[0];
+    let finalized: DrawStroke | null = null;
+    if (head && drawnLength > 0) {
+      finalized = { ...head.stroke, points: takeDistance(head.stroke.points, drawnLength) };
+    }
+    queue.length = 0;
+    drawnLength = 0;
+    return finalized;
+  }
+
+  function clear(): void {
+    queue.length = 0;
+    drawnLength = 0;
+  }
+
+  return { enqueue, tick, stop, clear };
 }
