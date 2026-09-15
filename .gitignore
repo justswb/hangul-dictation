@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-win/
+src-tauri/target/
+eval/results/
+.claude/settings.local.json
+.claude/worktrees/
+*.png
+!assets/**/*.png
