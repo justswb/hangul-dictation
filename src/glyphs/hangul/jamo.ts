@@ -40,7 +40,7 @@ export function placeInBox(strokes: [number, number][][], [bx, by, bw, bh]: Box)
 /** 자모 획 데이터. 모르는 문자는 `null`. */
 export function getJamo(char: string): JamoData | null {
   const base = BASE.get(char);
-  if (base) return base;
+  if (base) return { char: base.char, strokes: placeInBox(base.strokes, [0, 0, 1, 1]) };
   const rule = DERIVED[char];
   if (!rule) return null;
   const [a, b, boxA, boxB] = rule;

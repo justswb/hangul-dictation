@@ -33,6 +33,16 @@ describe('getJamo', () => {
     }
   });
 
+  it('반환값을 바꿔도 캐시와 파생 자모가 오염되지 않음', () => {
+    const before = getJamo('ㄱ')!;
+    const beforeGG = getJamo('ㄲ')!;
+    const g = getJamo('ㄱ')!;
+    g.strokes[0]![0]![0] = 0.99;
+    g.strokes.push([[0, 0], [1, 1]]);
+    expect(getJamo('ㄱ')).toEqual(before);
+    expect(getJamo('ㄲ')).toEqual(beforeGG);
+  });
+
   it('모르는 문자는 null', () => {
     expect(getJamo('A')).toBeNull();
   });
