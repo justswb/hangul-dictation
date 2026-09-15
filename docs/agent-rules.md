@@ -23,7 +23,12 @@
 | 전체 검사 | `podman compose run --rm -T dev npm run check` |
 | 의존성 설치 | `podman compose run --rm -T dev npm install` (worktree 첫 실행 시) |
 | 개발 서버 | `podman compose up dev` → http://localhost:5173 |
-| 스크린샷 | T02 완료 후 추가 |
+| 스크린샷 | `podman compose run --rm -T shot npm run shot -- debug/<페이지>.html shots/<이름>.png` |
+
+스크린샷 규약
+- 페이지 경로는 **앞에 `/` 없이** 쓴다 (Git Bash가 `/…`를 Windows 경로로 바꿈). 쿼리 가능: `debug/demo.html?instant=1`
+- 페이지는 그리기를 마치면 `window.__ready = true`를 설정한다 (`debug/globals.d.ts`에 타입 선언). 15초 안에 안 되면 실패
+- 뷰포트 1600×1000, `shots/`와 `*.png`는 git에 올리지 않는다. PR에는 이미지를 본문에 첨부하거나 리드에게 경로를 보고한다
 
 ## 4. 제출
 1. `check` 통과 확인.
@@ -46,6 +51,7 @@
 - 트렁크 기반: `main` 하나, 티켓 1개 = 브랜치 1개 = PR 1개.
 - 선행 티켓 머지 후 분기, 브랜치 위에 브랜치를 쌓지 않는다.
 - 머지는 리드만, **squash merge**. 조건: `check` 통과 + 리뷰 APPROVE + (`human-review` 라벨이면 사용자 승인).
+- **리드가 직접 한 티켓(`lead` 라벨)도 예외 없이** 리뷰어 APPROVE 후 머지한다.
 - 머지 전 `main`이 바뀌었으면 작업자가 리베이스. 충돌 시 작업자는 멈추고 리드가 해결.
 - `main` 직접 push 금지 (T00만 예외). 머지 후 브랜치·worktree 삭제.
 

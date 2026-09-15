@@ -3,6 +3,7 @@ dist/
 dist-win/
 src-tauri/target/
 eval/results/
+shots/
 .claude/settings.local.json
 .claude/worktrees/
 *.png
