@@ -15,6 +15,7 @@
 - 셸 명령은 **Bash 도구(Git Bash)** 로만 실행한다. PowerShell은 쓰지 않는다.
 - 모든 명령(npm, node, cargo 등)은 컨테이너에서 실행한다. 호스트에 도구를 설치하지 않는다.
 - `podman compose run`에는 항상 `-T`를 붙인다 (TTY 대기로 멈춤 방지).
+- GitHub 작업(이슈·PR 조회, PR 생성)은 **`mcp__github__*` 도구만** 쓴다. **`gh` CLI 사용 금지.** MCP가 실패하면 우회하지 말고 멈춘 뒤 리드에게 보고한다(브랜치 push까지만 해 둔다).
 - **`podman machine stop`/`start`는 실행하지 않는다.** 여러 에이전트와 GitHub MCP 서버가 같은 머신을 쓴다. 머신 관리는 리드만 한다.
 - API 키·토큰·환경변수 값을 읽거나 출력하지 않는다. 실제 AI API 호출 금지(티켓이 허용한 경우 제외).
 
