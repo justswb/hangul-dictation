@@ -137,6 +137,43 @@ describe('createScheduler', () => {
     expect(result.idle).toBe(true);
   });
 
+  it('대기 상태에서 빈 그룹 enqueue → 다음 tick에서 groupsDone에 포함, idle true', () => {
+    const scheduler = createScheduler({ speed: 900 });
+    scheduler.enqueue([], 'X');
+
+    const result = scheduler.tick(500);
+
+    expect(result.completed).toHaveLength(0);
+    expect(result.groupsDone).toEqual(['X']);
+    expect(result.idle).toBe(true);
+  });
+
+  it('그룹 A 진행 중 빈 그룹 X를 추가 → A가 끝난 뒤 이어서 X도 완료(순서 A, X)', () => {
+    const scheduler = createScheduler({ speed: 900 });
+    scheduler.enqueue([makeStroke([{ x: 0, y: 0 }, { x: 300, y: 0 }], 'A')], 'A');
+    scheduler.enqueue([], 'X');
+
+    const result = scheduler.tick(10_000);
+
+    expect(result.completed).toHaveLength(1);
+    expect(result.groupsDone).toEqual(['A', 'X']);
+    expect(result.idle).toBe(true);
+  });
+
+  it('isIdle()은 tick과 무관하게 현재 큐/진행 상태를 즉시 반영한다', () => {
+    const scheduler = createScheduler({ speed: 900 });
+    expect(scheduler.isIdle()).toBe(true);
+
+    scheduler.enqueue([makeStroke([{ x: 0, y: 0 }, { x: 900, y: 0 }])], 'g1');
+    expect(scheduler.isIdle()).toBe(false);
+
+    scheduler.tick(500);
+    expect(scheduler.isIdle()).toBe(false);
+
+    scheduler.tick(600);
+    expect(scheduler.isIdle()).toBe(true);
+  });
+
   it('진행 중인 획이 없을 때 stop() → null 반환, 큐는 비워진다', () => {
     const scheduler = createScheduler({ speed: 900 });
     scheduler.enqueue([makeStroke([{ x: 0, y: 0 }, { x: 900, y: 0 }])], 'g1');

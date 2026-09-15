@@ -31,6 +31,8 @@ export interface Scheduler {
   stop(): DrawStroke | null;
   /** 큐를 비운다. (캔버스를 지우는 것은 호출하는 쪽의 책임이다.) */
   clear(): void;
+  /** 지금 이 순간 큐가 비어 있고 진행 중인 획도 없는지. tick과 별개로 아무 때나 조회할 수 있다. */
+  isIdle(): boolean;
 }
 
 /** 점 배열의 총 길이(점 간 거리 합). */
@@ -71,7 +73,8 @@ function takeDistance(points: Point[], dist: number): Point[] {
   return result;
 }
 
-type QueueItem = { stroke: DrawStroke; length: number };
+// stroke가 null이면 "빈 그룹 마커"(길이 0, 그릴 것 없음, groupId 완료 신호 전용).
+type QueueItem = { stroke: DrawStroke | null; length: number; groupId: string };
 
 export function createScheduler({ speed = 900 }: SchedulerOptions = {}): Scheduler {
   const queue: QueueItem[] = [];
@@ -79,9 +82,14 @@ export function createScheduler({ speed = 900 }: SchedulerOptions = {}): Schedul
   let drawnLength = 0;
 
   function enqueue(strokes: DrawStroke[], groupId: string): void {
+    if (strokes.length === 0) {
+      // 빈 그룹도 차례가 오면 groupsDone으로 통지되도록 길이 0 마커를 넣는다.
+      queue.push({ stroke: null, length: 0, groupId });
+      return;
+    }
     for (const stroke of strokes) {
       const tagged: DrawStroke = { ...stroke, groupId };
-      queue.push({ stroke: tagged, length: pathLength(stroke.points) });
+      queue.push({ stroke: tagged, length: pathLength(stroke.points), groupId });
     }
   }
 
@@ -90,40 +98,38 @@ export function createScheduler({ speed = 900 }: SchedulerOptions = {}): Schedul
     const completed: DrawStroke[] = [];
     const groupsDone: string[] = [];
 
-    while (distance > 0 && queue.length > 0) {
+    while (queue.length > 0) {
       const item = queue[0];
       if (!item) break;
       const remaining = item.length - drawnLength;
       if (remaining <= distance) {
-        completed.push(item.stroke);
+        if (item.stroke) completed.push(item.stroke);
         distance -= remaining;
         queue.shift();
         drawnLength = 0;
         const next = queue[0];
-        if (!next || next.stroke.groupId !== item.stroke.groupId) {
-          groupsDone.push(item.stroke.groupId);
+        if (!next || next.groupId !== item.groupId) {
+          groupsDone.push(item.groupId);
         }
       } else {
         drawnLength += distance;
-        distance = 0;
+        break;
       }
     }
 
     let partial: DrawStroke | null = null;
     const head = queue[0];
-    if (head && drawnLength > 0) {
+    if (head && head.stroke && drawnLength > 0) {
       partial = { ...head.stroke, points: takeDistance(head.stroke.points, drawnLength) };
     }
 
-    const idle = queue.length === 0 && drawnLength === 0;
-
-    return { completed, partial, groupsDone, idle };
+    return { completed, partial, groupsDone, idle: isIdle() };
   }
 
   function stop(): DrawStroke | null {
     const head = queue[0];
     let finalized: DrawStroke | null = null;
-    if (head && drawnLength > 0) {
+    if (head && head.stroke && drawnLength > 0) {
       finalized = { ...head.stroke, points: takeDistance(head.stroke.points, drawnLength) };
     }
     queue.length = 0;
@@ -136,5 +142,9 @@ export function createScheduler({ speed = 900 }: SchedulerOptions = {}): Schedul
     drawnLength = 0;
   }
 
-  return { enqueue, tick, stop, clear };
+  function isIdle(): boolean {
+    return queue.length === 0 && drawnLength === 0;
+  }
+
+  return { enqueue, tick, stop, clear, isIdle };
 }
