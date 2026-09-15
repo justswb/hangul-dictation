@@ -1,0 +1,9 @@
+{"op":"plan","lines":3}
+{"op":"write","id":"t1","text":"깨진 줄
+{"op":"erase","id":"t1"}
+{"op":"write","id":"t2","text":"size 없음"}
+```
+{"op":"box","id":"b","text":"삼각형","shape":"triangle"}
+
+{"op":"write","id":"t3","text":"정상 줄","size":"body","extra":1}
+{"op":"arrow","from":"t3"}
