@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
+    "validate:jamo": "node scripts/validate-jamo.ts",
     "check": "tsc --noEmit && eslint . && vitest run",
     "shot": "node scripts/shot.ts"
   },
