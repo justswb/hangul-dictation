@@ -27,22 +27,30 @@ export function createFakeOpSource({
   lineDelayMs?: number;
   firstDelayMs?: number;
 }): OpSource {
-  let cancelled = false;
+  // start()를 호출할 때마다 세대를 새로 부여한다. cancel()은 "현재 최신 세대"만
+  // 취소하므로, 이전 요청의 cancel이 이후의 새 start()에 영향을 주지 않는다.
+  // 또한 새 start()가 호출되면 이전 세대는 자동으로 stale이 되어 조용히 끝난다.
+  let generation = 0;
+  let cancelledGeneration = -1;
 
   function cancel(): void {
-    cancelled = true;
+    cancelledGeneration = generation;
   }
 
   async function* start(): AsyncIterable<OpEvent> {
+    generation += 1;
+    const myGeneration = generation;
+    const isActive = (): boolean => generation === myGeneration && cancelledGeneration < myGeneration;
+
     let text: string;
     try {
       text = await load();
     } catch {
-      if (cancelled) return;
+      if (!isActive()) return;
       yield { type: 'error', error: { kind: 'network' } };
       return;
     }
-    if (cancelled) return;
+    if (!isActive()) return;
 
     const lines = text.split(/\r\n|\n/).filter((line) => line.trim() !== '');
 
@@ -57,9 +65,9 @@ export function createFakeOpSource({
     });
 
     for (let i = 0; i < lines.length; i += 1) {
-      if (cancelled) return;
+      if (!isActive()) return;
       await sleep(i === 0 ? firstDelayMs : lineDelayMs);
-      if (cancelled) return;
+      if (!isActive()) return;
 
       pending = undefined;
       parser.push(`${lines[i]}\n`);
@@ -68,7 +76,7 @@ export function createFakeOpSource({
       }
     }
 
-    if (cancelled) return;
+    if (!isActive()) return;
     yield { type: 'done' };
   }
 

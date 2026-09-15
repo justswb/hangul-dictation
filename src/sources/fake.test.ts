@@ -85,4 +85,43 @@ describe('createFakeOpSource', () => {
     const events = await collect(source.start(req));
     expect(events).toEqual([{ type: 'error', error: { kind: 'network' } }]);
   });
+
+  it('cancel() 후 같은 인스턴스로 다시 start()하면 정상적으로 op·done을 낸다', async () => {
+    const source = createFakeOpSource({ load: () => Promise.resolve(readFixture('tcp.ndjson')) });
+
+    const firstEvents = await collect(source.start(req));
+    expect(firstEvents[firstEvents.length - 1]).toEqual({ type: 'done' });
+
+    source.cancel();
+
+    const secondEvents = await collect(source.start(req));
+    const opEvents = secondEvents.filter((ev) => ev.type === 'op');
+    expect(opEvents).toHaveLength(8);
+    expect(secondEvents[secondEvents.length - 1]).toEqual({ type: 'done' });
+  });
+
+  it('첫 스트림 진행 중 두 번째 start()를 호출하면 첫 스트림은 더 이상 이벤트를 내지 않는다', async () => {
+    const source = createFakeOpSource({ load: () => Promise.resolve(readFixture('tcp.ndjson')) });
+
+    const firstEvents: OpEvent[] = [];
+    const firstDone = (async () => {
+      for await (const ev of source.start(req)) firstEvents.push(ev);
+    })();
+
+    // 첫 스트림의 첫 op(firstDelayMs=800ms)만 받은 뒤, 아직 끝나기 전에 두 번째 start() 호출
+    await vi.advanceTimersByTimeAsync(800);
+    expect(firstEvents).toHaveLength(1);
+
+    const secondEvents = await collect(source.start(req));
+
+    // 첫 스트림은 새 세대가 시작된 뒤로 이벤트가 늘지 않아야 한다 (done도 없음)
+    expect(firstEvents).toHaveLength(1);
+    await firstDone;
+    expect(firstEvents).toHaveLength(1);
+
+    // 두 번째 스트림은 정상적으로 처음부터 전체를 흘려보낸다
+    const secondOps = secondEvents.filter((ev) => ev.type === 'op');
+    expect(secondOps).toHaveLength(8);
+    expect(secondEvents[secondEvents.length - 1]).toEqual({ type: 'done' });
+  });
 });
