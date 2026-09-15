@@ -1,0 +1,87 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 8px;
+  font-family: system-ui, sans-serif;
+}
+
+.shell__toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.shell__btn {
+  padding: 6px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #f5f5f5;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.shell__btn:hover {
+  background: #eee;
+}
+
+.shell__canvasWrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.shell__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  object-fit: contain;
+  border: 1px solid #ddd;
+  box-sizing: border-box;
+}
+
+.shell__inputRow {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.shell__input {
+  flex: 1;
+  min-height: 2.4em;
+  padding: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  resize: none;
+}
+
+.shell__input:disabled {
+  background: #f0f0f0;
+  color: #888;
+}
+
+.shell__btn--send {
+  min-width: 72px;
+}
+
+.shell__status {
+  min-height: 1.2em;
+  font-size: 13px;
+  color: #666;
+}
+
+.shell__error {
+  font-size: 13px;
+  color: #c00;
+}
+
+.shell__error[hidden] {
+  display: none;
+}
