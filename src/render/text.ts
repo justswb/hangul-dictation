@@ -8,8 +8,13 @@
  * - 한글 자모 단독(ㄱ, ㅏ 등): `getJamo` 결과(0–1 칸)를 `height × height`로 확대(한글 음절과 동일한 칸).
  * - 그 외 미지원 문자(한자, 이모지 등): Hershey `?` 글리프로 대체해 ASCII와 같은 규칙으로 배치한다.
  *   같은 문자에 대해서는 `console.warn`을 1회만 남긴다.
+ *
+ * `textToStrokes`와 `measureText`는 글자별 종류·전진폭을 계산하는 `layoutChars` 순회를
+ * 공유한다. `measureText`는 그 순회에서 전진폭만 누적할 뿐 획의 최종 좌표(점)는 만들지
+ * 않는다 — `placeStroke`/`placeTupleStroke` 호출은 `textToStrokes`의 emit 콜백 안에서만
+ * 일어난다.
  */
-import type { DrawStroke, Point, Stroke } from '../contracts/stroke.ts';
+import type { DrawStroke, Glyph, Point, Stroke } from '../contracts/stroke.ts';
 import { composeSyllable } from '../glyphs/hangul/compose.ts';
 import { getJamo } from '../glyphs/hangul/jamo.ts';
 import { parseJhf } from '../glyphs/latin/hershey.ts';
@@ -27,9 +32,20 @@ const ASCII_LAST_CODE = 126;
 
 const latinGlyphs = parseJhf(hersheyFont);
 const FALLBACK_CHAR = '?';
+const fallbackGlyph: Glyph = (() => {
+  const glyph = latinGlyphs.get(FALLBACK_CHAR);
+  if (!glyph) throw new Error(`hershey: 대체 글리프 "${FALLBACK_CHAR}"를 찾을 수 없음`);
+  return glyph;
+})();
 
 /** 미지원 문자 중 이미 경고를 남긴 문자 집합(중복 경고 방지, 모듈 수준). */
 const warnedUnsupportedChars = new Set<string>();
+
+function warnUnsupportedOnce(ch: string): void {
+  if (warnedUnsupportedChars.has(ch)) return;
+  warnedUnsupportedChars.add(ch);
+  console.warn(`textToStrokes: 지원하지 않는 문자 "${ch}"를 '?'로 대체합니다.`);
+}
 
 export type TextToStrokesOptions = {
   /** 첫 글자 칸의 왼쪽 위 x. */
@@ -58,6 +74,58 @@ function placeTupleStroke(stroke: [number, number][], originX: number, originY: 
   return stroke.map(([x, y]) => ({ x: originX + x * scale, y: originY + y * scale }));
 }
 
+/** 글자 한 칸의 종류·전진폭·(있다면) 배치용 원본 획 데이터. */
+type CharPlan =
+  | { kind: 'syllable'; advance: number; strokes: Stroke[] }
+  | { kind: 'jamo'; advance: number; strokes: [number, number][][] }
+  | { kind: 'latin'; advance: number; glyph: Glyph };
+
+/**
+ * 글자 하나를 분류하고 전진폭을 계산한다. 미지원 문자는 `?` 대체 글리프로 취급하며,
+ * 이 시점에 (처음 등장할 때만) `console.warn`을 남긴다. 공백은 이 함수가 다루지 않는다
+ * (호출부에서 먼저 분기).
+ */
+function planChar(ch: string, height: number): CharPlan {
+  const syllable = composeSyllable(ch);
+  if (syllable) return { kind: 'syllable', advance: height, strokes: syllable };
+
+  const code = ch.codePointAt(0) ?? -1;
+  const asciiGlyph = code >= ASCII_FIRST_CODE && code <= ASCII_LAST_CODE ? latinGlyphs.get(ch) : undefined;
+  if (asciiGlyph) return { kind: 'latin', advance: asciiGlyph.advance * LATIN_SCALE_RATIO * height, glyph: asciiGlyph };
+
+  const jamo = getJamo(ch);
+  if (jamo) return { kind: 'jamo', advance: height, strokes: jamo.strokes };
+
+  warnUnsupportedOnce(ch);
+  return { kind: 'latin', advance: fallbackGlyph.advance * LATIN_SCALE_RATIO * height, glyph: fallbackGlyph };
+}
+
+/**
+ * 텍스트 한 줄을 순회하며 각 글자 칸의 전진폭(간격 포함)을 계산한다.
+ * `emit`이 주어지면 글자 칸마다(공백 제외) `(plan, cursorX)`로 호출한다 — `cursorX`는
+ * 그 칸이 시작하는 위치(0부터, 간격 반영 후)다. 반환값은 전체 텍스트의 가로 폭.
+ */
+function layoutChars(text: string, height: number, emit?: (plan: CharPlan, cursorX: number) => void): number {
+  let cursorX = 0;
+  let lastWasGlyph = false;
+
+  for (const ch of text) {
+    if (ch === ' ') {
+      cursorX += SPACE_RATIO * height;
+      lastWasGlyph = false;
+      continue;
+    }
+
+    if (lastWasGlyph) cursorX += LETTER_GAP_RATIO * height;
+    const plan = planChar(ch, height);
+    emit?.(plan, cursorX);
+    cursorX += plan.advance;
+    lastWasGlyph = true;
+  }
+
+  return cursorX;
+}
+
 /**
  * 텍스트 한 줄 → 획.
  * `(x, y)` = 첫 글자 칸의 왼쪽 위. 미지원 문자는 `?` 글리프로 대체한다(칸·간격은 ASCII와 동일).
@@ -67,86 +135,38 @@ export function textToStrokes(
   { x, y, height, color, width }: TextToStrokesOptions,
 ): TextToStrokesResult {
   const strokes: DrawStroke[] = [];
-  let cursorX = x;
-  let lastWasGlyph = false;
   let charIndex = 0;
 
-  for (const ch of text) {
-    if (ch === ' ') {
-      cursorX += SPACE_RATIO * height;
-      lastWasGlyph = false;
-      continue;
-    }
+  const totalWidth = layoutChars(text, height, (plan, cursorX) => {
+    const groupId = `char-${charIndex}`;
+    const originX = x + cursorX;
 
-    const syllable = composeSyllable(ch);
-    if (syllable) {
-      if (lastWasGlyph) cursorX += LETTER_GAP_RATIO * height;
-      const groupId = `char-${charIndex}`;
-      for (const stroke of syllable) {
-        strokes.push({ color, width, groupId, points: placeStroke(stroke, cursorX, y, height) });
+    if (plan.kind === 'syllable') {
+      for (const stroke of plan.strokes) {
+        strokes.push({ color, width, groupId, points: placeStroke(stroke, originX, y, height) });
       }
-      cursorX += height;
-      lastWasGlyph = true;
-      charIndex++;
-      continue;
-    }
-
-    const code = ch.codePointAt(0) ?? -1;
-    const glyph = code >= ASCII_FIRST_CODE && code <= ASCII_LAST_CODE ? latinGlyphs.get(ch) : undefined;
-    if (glyph) {
-      if (lastWasGlyph) cursorX += LETTER_GAP_RATIO * height;
+    } else if (plan.kind === 'jamo') {
+      for (const stroke of plan.strokes) {
+        strokes.push({ color, width, groupId, points: placeTupleStroke(stroke, originX, y, height) });
+      }
+    } else {
       const scale = LATIN_SCALE_RATIO * height;
       const originY = y + height - scale; // 기준선(글리프 y=1)이 칸 아래쪽(y+height)에 오도록.
-      const groupId = `char-${charIndex}`;
-      for (const stroke of glyph.strokes) {
-        strokes.push({ color, width, groupId, points: placeStroke(stroke, cursorX, originY, scale) });
+      for (const stroke of plan.glyph.strokes) {
+        strokes.push({ color, width, groupId, points: placeStroke(stroke, originX, originY, scale) });
       }
-      cursorX += glyph.advance * scale;
-      lastWasGlyph = true;
-      charIndex++;
-      continue;
     }
 
-    const jamo = getJamo(ch);
-    if (jamo) {
-      if (lastWasGlyph) cursorX += LETTER_GAP_RATIO * height;
-      const groupId = `char-${charIndex}`;
-      for (const stroke of jamo.strokes) {
-        strokes.push({ color, width, groupId, points: placeTupleStroke(stroke, cursorX, y, height) });
-      }
-      cursorX += height;
-      lastWasGlyph = true;
-      charIndex++;
-      continue;
-    }
+    charIndex++;
+  });
 
-    // 미지원 문자: Hershey `?` 글리프로 대체(같은 문자는 경고 1회만).
-    if (!warnedUnsupportedChars.has(ch)) {
-      warnedUnsupportedChars.add(ch);
-      console.warn(`textToStrokes: 지원하지 않는 문자 "${ch}"를 '?'로 대체합니다.`);
-    }
-    const fallbackGlyph = latinGlyphs.get(FALLBACK_CHAR);
-    if (fallbackGlyph) {
-      if (lastWasGlyph) cursorX += LETTER_GAP_RATIO * height;
-      const scale = LATIN_SCALE_RATIO * height;
-      const originY = y + height - scale;
-      const groupId = `char-${charIndex}`;
-      for (const stroke of fallbackGlyph.strokes) {
-        strokes.push({ color, width, groupId, points: placeStroke(stroke, cursorX, originY, scale) });
-      }
-      cursorX += fallbackGlyph.advance * scale;
-      lastWasGlyph = true;
-      charIndex++;
-    }
-  }
-
-  return { strokes, width: cursorX - x };
+  return { strokes, width: totalWidth };
 }
 
 /**
- * 텍스트 한 줄의 가로 폭(px)만 계산한다. `textToStrokes`와 같은 배치 경로를 공유하므로
- * (내부적으로 `textToStrokes`를 호출) 두 값은 항상 일치한다.
+ * 텍스트 한 줄의 가로 폭(px)만 계산한다. `textToStrokes`와 같은 `layoutChars` 순회를
+ * 공유하므로 두 값은 항상 일치하며, 획의 최종 좌표(점)는 만들지 않는다.
  */
 export function measureText(text: string, height: number): number {
-  return textToStrokes(text, { x: 0, y: 0, height, color: 'black', width: 0 }).width;
+  return layoutChars(text, height);
 }
