@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { composeSyllable } from '../glyphs/hangul/compose.ts';
+import { getJamo } from '../glyphs/hangul/jamo.ts';
 import { parseJhf } from '../glyphs/latin/hershey.ts';
-import { textToStrokes } from './text.ts';
+import { measureText, textToStrokes } from './text.ts';
 
 const OPTS = { x: 10, y: 20, height: 80, color: 'black' as const, width: 4 };
 
@@ -56,10 +57,51 @@ describe('textToStrokes', () => {
     expect(width).toBeCloseTo(0.35 * OPTS.height, 5);
   });
 
-  it('지원하지 않는 문자는 건너뛴다(칸도 간격도 없음)', () => {
-    const withUnsupported = textToStrokes('A漢A', OPTS);
-    const without = textToStrokes('AA', OPTS);
-    expect(withUnsupported.width).toBeCloseTo(without.width, 5);
-    expect(withUnsupported.strokes.length).toBe(without.strokes.length);
+  it.each(['안녕 TCP', 'ㄱㄴ', '漢A', ''])("measureText(%j) === textToStrokes(%j).width", (text) => {
+    expect(measureText(text, OPTS.height)).toBeCloseTo(textToStrokes(text, OPTS).width, 5);
+  });
+
+  it("'漢' 획 = '?' 획", () => {
+    const hanja = textToStrokes('漢', OPTS);
+    const fallback = textToStrokes('?', OPTS);
+    expect(hanja.strokes).toEqual(fallback.strokes);
+  });
+
+  it("'ㄱ' 획 수 = getJamo('ㄱ') 획 수", () => {
+    const expected = getJamo('ㄱ');
+    expect(expected).not.toBeNull();
+    const { strokes } = textToStrokes('ㄱ', OPTS);
+    expect(strokes).toHaveLength(expected?.strokes.length ?? -1);
+  });
+
+  it('자모 단독의 모든 점이 [x, x+height] × [y, y+height] 안', () => {
+    const { strokes } = textToStrokes('ㄱㅏ', OPTS);
+    for (const stroke of strokes) {
+      for (const p of stroke.points) {
+        expect(p.x).toBeGreaterThanOrEqual(OPTS.x - 1e-6);
+        expect(p.y).toBeGreaterThanOrEqual(OPTS.y - 1e-6);
+        expect(p.y).toBeLessThanOrEqual(OPTS.y + OPTS.height + 1e-6);
+      }
+    }
+  });
+
+  // 모듈 수준 경고 기록이 테스트 간에 공유되므로, 다른 테스트와 겹치지 않는 고유한
+  // 미지원 문자('龍')를 사용해 격리한다.
+  it('같은 미지원 문자가 반복돼도 console.warn은 1회만 호출된다', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    textToStrokes('龍龍', OPTS);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  // text.ts는 자모 단독 여부를 U+3131–U+3163 범위 판정만으로 결정한다(획 생성 없이
+  // 폭을 구하기 위함). 이 판정이 실제 자모 데이터(getJamo)와 어긋나지 않는지 지킨다 —
+  // 범위 안 문자인데 getJamo가 null을 반환하면 textToStrokes가 조용히 획 없는 칸을
+  // 만들게 된다.
+  it('호환 자모(U+3131–U+3163) 51자 전체에 대해 getJamo가 null이 아니다', () => {
+    for (let code = 0x3131; code <= 0x3163; code++) {
+      const ch = String.fromCharCode(code);
+      expect(getJamo(ch), `getJamo(${JSON.stringify(ch)})`).not.toBeNull();
+    }
   });
 });
