@@ -93,4 +93,15 @@ describe('textToStrokes', () => {
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });
+
+  // text.ts는 자모 단독 여부를 U+3131–U+3163 범위 판정만으로 결정한다(획 생성 없이
+  // 폭을 구하기 위함). 이 판정이 실제 자모 데이터(getJamo)와 어긋나지 않는지 지킨다 —
+  // 범위 안 문자인데 getJamo가 null을 반환하면 textToStrokes가 조용히 획 없는 칸을
+  // 만들게 된다.
+  it('호환 자모(U+3131–U+3163) 51자 전체에 대해 getJamo가 null이 아니다', () => {
+    for (let code = 0x3131; code <= 0x3163; code++) {
+      const ch = String.fromCharCode(code);
+      expect(getJamo(ch), `getJamo(${JSON.stringify(ch)})`).not.toBeNull();
+    }
+  });
 });

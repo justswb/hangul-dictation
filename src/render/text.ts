@@ -16,6 +16,7 @@
  */
 import type { DrawStroke, Glyph, Point, Stroke } from '../contracts/stroke.ts';
 import { composeSyllable } from '../glyphs/hangul/compose.ts';
+import { decompose } from '../glyphs/hangul/decompose.ts';
 import { getJamo } from '../glyphs/hangul/jamo.ts';
 import { parseJhf } from '../glyphs/latin/hershey.ts';
 import hersheyFont from '../../assets/hershey/futural.jhf?raw';
@@ -29,6 +30,10 @@ const SPACE_RATIO = 0.35;
 
 const ASCII_FIRST_CODE = 32;
 const ASCII_LAST_CODE = 126;
+
+/** 호환 자모(현대 자음·모음 51자) 범위: U+3131("ㄱ")–U+3163("ㅣ"). */
+const COMPAT_JAMO_FIRST_CODE = 0x3131;
+const COMPAT_JAMO_LAST_CODE = 0x3163;
 
 const latinGlyphs = parseJhf(hersheyFont);
 const FALLBACK_CHAR = '?';
@@ -74,11 +79,21 @@ function placeTupleStroke(stroke: [number, number][], originX: number, originY: 
   return stroke.map(([x, y]) => ({ x: originX + x * scale, y: originY + y * scale }));
 }
 
-/** 글자 한 칸의 종류·전진폭·(있다면) 배치용 원본 획 데이터. */
+/**
+ * 글자 한 칸의 종류·전진폭. 한글 음절/자모는 `ch`만 들고 있다가 실제 획(`composeSyllable`/
+ * `getJamo`)은 배치가 필요한 곳(emit)에서만 조회한다 — 한글 칸 폭은 항상 `height`라
+ * 폭 계산(measureText)에는 획 데이터가 필요 없다.
+ */
 type CharPlan =
-  | { kind: 'syllable'; advance: number; strokes: Stroke[] }
-  | { kind: 'jamo'; advance: number; strokes: [number, number][][] }
+  | { kind: 'syllable'; ch: string; advance: number }
+  | { kind: 'jamo'; ch: string; advance: number }
   | { kind: 'latin'; advance: number; glyph: Glyph };
+
+/** 호환 자모 단독 문자(ㄱ, ㅏ 등) 여부. 범위 판정만 하며 실제 자모 데이터는 조회하지 않는다. */
+function isCompatJamo(ch: string): boolean {
+  const code = ch.codePointAt(0) ?? -1;
+  return code >= COMPAT_JAMO_FIRST_CODE && code <= COMPAT_JAMO_LAST_CODE;
+}
 
 /**
  * 글자 하나를 분류하고 전진폭을 계산한다. 미지원 문자는 `?` 대체 글리프로 취급하며,
@@ -86,15 +101,13 @@ type CharPlan =
  * (호출부에서 먼저 분기).
  */
 function planChar(ch: string, height: number): CharPlan {
-  const syllable = composeSyllable(ch);
-  if (syllable) return { kind: 'syllable', advance: height, strokes: syllable };
+  if (decompose(ch)) return { kind: 'syllable', ch, advance: height };
 
   const code = ch.codePointAt(0) ?? -1;
   const asciiGlyph = code >= ASCII_FIRST_CODE && code <= ASCII_LAST_CODE ? latinGlyphs.get(ch) : undefined;
   if (asciiGlyph) return { kind: 'latin', advance: asciiGlyph.advance * LATIN_SCALE_RATIO * height, glyph: asciiGlyph };
 
-  const jamo = getJamo(ch);
-  if (jamo) return { kind: 'jamo', advance: height, strokes: jamo.strokes };
+  if (isCompatJamo(ch)) return { kind: 'jamo', ch, advance: height };
 
   warnUnsupportedOnce(ch);
   return { kind: 'latin', advance: fallbackGlyph.advance * LATIN_SCALE_RATIO * height, glyph: fallbackGlyph };
@@ -142,11 +155,11 @@ export function textToStrokes(
     const originX = x + cursorX;
 
     if (plan.kind === 'syllable') {
-      for (const stroke of plan.strokes) {
+      for (const stroke of composeSyllable(plan.ch) ?? []) {
         strokes.push({ color, width, groupId, points: placeStroke(stroke, originX, y, height) });
       }
     } else if (plan.kind === 'jamo') {
-      for (const stroke of plan.strokes) {
+      for (const stroke of getJamo(plan.ch)?.strokes ?? []) {
         strokes.push({ color, width, groupId, points: placeTupleStroke(stroke, originX, y, height) });
       }
     } else {
