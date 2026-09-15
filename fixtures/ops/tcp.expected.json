@@ -1,0 +1,55 @@
+{
+  "ops": [
+    {
+      "op": "plan",
+      "lines": 6
+    },
+    {
+      "op": "write",
+      "id": "t1",
+      "text": "TCP 3-way handshake",
+      "size": "title"
+    },
+    {
+      "op": "write",
+      "id": "t2",
+      "text": "연결 전에 서로 준비 확인",
+      "size": "body"
+    },
+    {
+      "op": "box",
+      "id": "c",
+      "text": "Client",
+      "shape": "rect"
+    },
+    {
+      "op": "box",
+      "id": "s",
+      "text": "Server",
+      "shape": "rect",
+      "place": {
+        "rel": "right_of",
+        "of": "c"
+      }
+    },
+    {
+      "op": "arrow",
+      "from": "c",
+      "to": "s",
+      "label": "SYN"
+    },
+    {
+      "op": "arrow",
+      "from": "s",
+      "to": "c",
+      "label": "SYN-ACK"
+    },
+    {
+      "op": "mark",
+      "target": "t1",
+      "style": "underline",
+      "color": "red"
+    }
+  ],
+  "invalidLines": 0
+}

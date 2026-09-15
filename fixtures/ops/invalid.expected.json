@@ -1,0 +1,15 @@
+{
+  "ops": [
+    {
+      "op": "plan",
+      "lines": 3
+    },
+    {
+      "op": "write",
+      "id": "t3",
+      "text": "정상 줄",
+      "size": "body"
+    }
+  ],
+  "invalidLines": 6
+}
