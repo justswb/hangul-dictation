@@ -9,6 +9,8 @@
  */
 import { createSession, type Session } from './session.ts';
 import { createFakeOpSource, fixtureLoader } from './sources/fake.ts';
+import { createProxyOpSource } from './sources/proxy.ts';
+import type { OpSource } from './contracts/op-source.ts';
 import { createAnimator } from './render/animator.ts';
 import { createScheduler } from './render/scheduler.ts';
 import { createShell, type ShellState } from './ui/shell.ts';
@@ -22,7 +24,11 @@ const fixture = params.get('fixture');
 const autoPlay = fixture !== null;
 const question = params.get('q') ?? 'TCP 3-way handshake를 설명해 줘';
 
-const source = createFakeOpSource({ load: fixtureLoader(fixture ?? 'tcp') });
+// `?source=proxy&provider=claude`면 개발 프록시(dev-proxy)에 붙는 ProxyOpSource를 쓴다 (T27).
+const source: OpSource =
+  params.get('source') === 'proxy'
+    ? createProxyOpSource({ baseUrl: 'http://localhost:8787', provider: params.get('provider') ?? 'claude' })
+    : createFakeOpSource({ load: fixtureLoader(fixture ?? 'tcp') });
 
 /** 제공자·키 입력 화면은 이후 티켓에서 붙인다. 그때까지의 안내 문구. */
 const PROVIDER_NOTICE = '제공자 설정 화면은 아직 없습니다. 키를 확인해 주세요.';
