@@ -24,3 +24,26 @@ export const LINE_HEIGHT_RATIO = 1.4;
 
 /** 색이 지정되지 않은 op의 기본 색. */
 export const DEFAULT_COLOR: Color = 'black';
+
+/** 도식 상수 (T21). */
+
+/** box 안쪽 좌우 여백(px). */
+export const BOX_PADDING_X = 24;
+
+/** box 안쪽 위아래 여백(px). */
+export const BOX_PADDING_Y = 16;
+
+/** `right_of` 배치 시 참조 요소 오른쪽과의 간격(px). */
+export const BOX_GAP_X = 80;
+
+/** `below` 배치(및 줄 넘김) 시 위쪽 요소 아래와의 간격(px). */
+export const BOX_GAP_Y = 60;
+
+/** 겹침을 풀 때 겹친 폭에 더하는 여유(px). */
+export const OVERLAP_GAP = 20;
+
+/** box 배치 후 `cursorY`가 box 아래로 두는 간격(px). */
+export const BOX_CURSOR_GAP = 20;
+
+/** box 라벨의 텍스트 크기. */
+export const BOX_TEXT_SIZE: TextSize = 'body';
