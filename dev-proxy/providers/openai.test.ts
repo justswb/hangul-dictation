@@ -98,6 +98,26 @@ describe('openai streamText', () => {
     expect(create).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledWith('OPENAI_MODEL 미설정');
   });
+
+  it('OPENAI_MODEL 없음 → withRetry로 감싸도 재시도하지 않고 1회만 호출·로그 1번', async () => {
+    delete process.env.OPENAI_MODEL;
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { client, create } = fakeClient(fakeStream([]));
+
+    let calls = 0;
+    const makeStream = () => {
+      calls += 1;
+      return streamText(req, undefined, client);
+    };
+
+    const events = [];
+    for await (const ev of toEvents(withRetry(makeStream, undefined, [500, 1000]))) events.push(ev);
+
+    expect(events).toEqual([{ t: 'error', kind: 'server' }]);
+    expect(calls).toBe(1);
+    expect(create).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+  });
 });
 
 // T30(이슈 #36) T28 리뷰 결함 수정: response.output_text.delta 외의 실패 이벤트를
@@ -215,6 +235,25 @@ describe('openai 실패 이벤트 → server.ts 파이프라인(withRetry + toEv
     expect(events).toEqual([
       { t: 'text', v: '안' },
       { t: 'error', kind: 'stream_cut' },
+    ]);
+  });
+
+  it('텍스트 1개 후 response.incomplete(content_filter) → stream_cut이 아니라 refusal', async () => {
+    process.env.OPENAI_MODEL = 'gpt-test';
+    const incomplete = {
+      type: 'response.incomplete',
+      response: { incomplete_details: { reason: 'content_filter' } },
+    } as ResponseStreamEvent;
+    const { client } = fakeClient(fakeStream([textDelta('안'), incomplete]));
+
+    const events = [];
+    for await (const ev of toEvents(withRetry(() => streamText(req, undefined, client), undefined, []))) {
+      events.push(ev);
+    }
+
+    expect(events).toEqual([
+      { t: 'text', v: '안' },
+      { t: 'error', kind: 'refusal' },
     ]);
   });
 });

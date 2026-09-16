@@ -34,17 +34,23 @@ export type AppErrorKind = 'auth' | 'rate_limit' | 'network' | 'server' | 'refus
 /**
  * 제공자가 SDK 오류가 아닌 공통 상황(거절, 스트림 중단 등)을 나타낼 때 던지는 오류.
  * `classifyProviderError`가 이 오류를 만나면 `kind`를 그대로 쓴다.
+ *
+ * `retryable`은 재시도 가능 여부를 명시적으로 못 박고 싶을 때만 쓴다(예: 설정
+ * 오류처럼 다시 해 봐야 똑같이 실패하는 경우 `false`). 지정하지 않으면
+ * `withRetry`가 `kind`·(있다면) 원인 오류의 상태 코드로 알아서 판단한다.
  */
 export class ProviderError extends Error {
   readonly kind: AppErrorKind;
+  readonly retryable?: boolean;
 
-  constructor(kind: AppErrorKind, message?: string, options?: { cause?: unknown }) {
+  constructor(kind: AppErrorKind, message?: string, options?: { cause?: unknown; retryable?: boolean }) {
     super(message ?? kind, options);
     this.kind = kind;
+    this.retryable = options?.retryable;
   }
 }
 
-/** 첫 텍스트 이벤트 전에 한해 재시도할 오류 유형. */
+/** 첫 텍스트 이벤트 전에 한해 재시도할 수 있는 오류 유형(그 안에서도 `isRetryable`로 한 번 더 거른다). */
 const RETRYABLE_KINDS: ReadonlySet<AppErrorKind> = new Set(['network', 'rate_limit', 'server']);
 
 /**
@@ -75,25 +81,50 @@ export function classifyProviderError(err: unknown): AppErrorKind {
   return 'server';
 }
 
-/** `ms` 동안 기다리되, `signal`이 중단되면 즉시 끝낸다(재시도를 멈출 수 있도록). */
+/**
+ * `kind`가 재시도 대상 종류이더라도, 다시 시도해 봐야 똑같이 실패할 오류는 걸러낸다.
+ * - `ProviderError`가 `retryable`을 명시했으면 그 값을 그대로 따른다(예: 설정 누락).
+ * - `server`로 분류된 SDK 오류 중 상태 코드가 4xx(401/403/429는 이미 auth/rate_limit로
+ *   따로 분류되므로 여기 오지 않는다)인 것은 요청 자체가 잘못된 것이므로 재시도하지 않는다.
+ *   5xx나 상태 코드가 없는 연결 오류는 그대로 재시도 대상이다.
+ */
+function isRetryable(err: unknown, kind: AppErrorKind): boolean {
+  if (err instanceof ProviderError && err.retryable !== undefined) return err.retryable;
+  if (!RETRYABLE_KINDS.has(kind)) return false;
+
+  if (kind === 'server') {
+    const status = (err as { status?: unknown } | null | undefined)?.status;
+    if (typeof status === 'number' && status >= 400 && status < 500) return false;
+  }
+
+  return true;
+}
+
+/** `ms` 동안 기다리되, `signal`이 중단되면 즉시 끝낸다(재시도를 멈출 수 있도록). 정상 종료 시 abort 리스너를 해제해 남기지 않는다. */
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer);
-        resolve();
-      },
-      { once: true },
-    );
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      resolve();
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
 /**
- * 첫 텍스트 조각이 나오기 전에 생긴 `network`·`rate_limit`·`server` 오류만
- * `delaysMs.length`번까지 재시도한다(제공자 SDK 자체 재시도는 꺼 둔 상태를 전제로 한다).
- * 텍스트를 이미 하나라도 낸 뒤에 오류가 나면 재시도하지 않고 `stream_cut`으로 바꿔 던진다.
+ * 첫 텍스트 조각이 나오기 전에 생긴, 재시도해 볼 만한 `network`·`rate_limit`·`server`
+ * 오류만 `delaysMs.length`번까지 재시도한다(제공자 SDK 자체 재시도는 꺼 둔 상태를
+ * 전제로 한다. `isRetryable` 참고).
+ *
+ * 텍스트를 이미 하나라도 낸 뒤에 오류가 나면 재시도하지 않는다. 이때 오류가 거절
+ * (`refusal`)이면 그 자체가 최종 응답이므로 `refusal`로 그대로 던지고(Claude는 거절을
+ * 스트림 끝 `message_delta`로 알려 주므로 보통 텍스트 뒤에 온다), 그 밖의 오류는
+ * `stream_cut`으로 바꿔 던진다.
+ *
  * `signal`이 중단되면 대기를 즉시 끝내고 재시도 없이 마지막 오류를 던진다.
  */
 export async function* withRetry(
@@ -113,12 +144,13 @@ export async function* withRetry(
       return;
     } catch (err) {
       if (hadText) {
+        if (classifyProviderError(err) === 'refusal') throw err;
         throw new ProviderError('stream_cut', undefined, { cause: err });
       }
 
       const kind = classifyProviderError(err);
       const nextDelay = delaysMs[attempt];
-      if (!RETRYABLE_KINDS.has(kind) || nextDelay === undefined || signal?.aborted) {
+      if (!isRetryable(err, kind) || nextDelay === undefined || signal?.aborted) {
         throw err;
       }
 

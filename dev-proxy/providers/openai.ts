@@ -25,6 +25,8 @@
  *   (메시지 문자열이 아니라 구조화된 `code` 값으로만 판별).
  * - SDK 자체 재시도는 `dev-proxy/errors.ts`의 재시도와 합쳐 과도해지지 않도록
  *   `maxRetries: 0`으로 끈다(옵션 근거: `node_modules/openai/src/client.ts` 394, 504행).
+ * - `OPENAI_MODEL` 미설정처럼 다시 시도해도 똑같이 실패하는 오류는
+ *   `ProviderError({ retryable: false })`로 표시해 `withRetry`가 재시도하지 않게 한다.
  */
 import { readFileSync } from 'node:fs';
 import OpenAI from 'openai';
@@ -71,6 +73,10 @@ export async function* toTextChunks(stream: OpenAIStream, signal?: AbortSignal):
       } else if (event.type === 'response.refusal.delta' || event.type === 'response.refusal.done') {
         throw new ProviderError('refusal');
       } else if (event.type === 'error') {
+        // 실제 SDK는 서버 전송 이벤트(SSE) `error`를 받으면 스트림을 소비하기도
+        // 전에 스스로 `APIError`를 던지도록 구현돼 있어(공식 SDK 내부 파서), 이
+        // 분기가 실행되는 경우는 거의 없다. 그래도 방어적으로 남겨 둔다(예: 다른
+        // SDK 버전이나 테스트에서 이 이벤트를 직접 흘려보내는 경우).
         throw new ProviderError(classifyResponseErrorCode(event.code));
       } else if (event.type === 'response.failed') {
         throw new ProviderError(classifyResponseErrorCode(event.response.error?.code));
@@ -92,7 +98,8 @@ export async function* streamText(
   const model = process.env.OPENAI_MODEL;
   if (!model) {
     console.error('OPENAI_MODEL 미설정');
-    throw new Error('OPENAI_MODEL 미설정');
+    // 설정 오류는 다시 시도해도 똑같이 실패하므로 재시도 대상에서 뺀다.
+    throw new ProviderError('server', 'OPENAI_MODEL 미설정', { retryable: false });
   }
 
   const stream = await client.responses.create({

@@ -99,6 +99,30 @@ describe('withRetry', () => {
     expect(calls).toBe(1);
   });
 
+  it('텍스트 1개 후 거절 → stream_cut이 아니라 refusal로, 재시도 없이 던진다', async () => {
+    let calls = 0;
+    const makeStream = () => {
+      calls += 1;
+      return (async function* () {
+        yield '일부';
+        throw new ProviderError('refusal');
+      })();
+    };
+
+    const iterator = withRetry(makeStream);
+    const collected: string[] = [];
+    let caught: unknown;
+    try {
+      for await (const chunk of iterator) collected.push(chunk);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(collected).toEqual(['일부']);
+    expect(classifyProviderError(caught)).toBe('refusal');
+    expect(calls).toBe(1);
+  });
+
   it('auth·refusal 등 재시도 불가 오류는 재시도 없이 그대로 던진다', async () => {
     let calls = 0;
     const makeStream = () => {
@@ -118,7 +142,45 @@ describe('withRetry', () => {
     expect(calls).toBe(1);
   });
 
-  it('재시도 대기 중 signal이 중단되면 더 재시도하지 않는다', async () => {
+  it('4xx(예: 400)는 server로 분류되지만 재시도해 봐야 소용없으므로 재시도하지 않는다', async () => {
+    let calls = 0;
+    const makeStream = () => {
+      calls += 1;
+      return failingStream(new Anthropic.BadRequestError(400, {}, 'x', new Headers()));
+    };
+
+    const iterator = withRetry(makeStream, undefined, [500, 1000]);
+    let caught: unknown;
+    try {
+      await drain(iterator);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(classifyProviderError(caught)).toBe('server');
+    expect(calls).toBe(1);
+  });
+
+  it('ProviderError({ retryable: false })는 server 분류라도 재시도하지 않는다', async () => {
+    let calls = 0;
+    const makeStream = () => {
+      calls += 1;
+      return failingStream(new ProviderError('server', '설정 오류', { retryable: false }));
+    };
+
+    const iterator = withRetry(makeStream, undefined, [500, 1000]);
+    let caught: unknown;
+    try {
+      await drain(iterator);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(classifyProviderError(caught)).toBe('server');
+    expect(calls).toBe(1);
+  });
+
+  it('재시도 대기 중간에 signal이 중단되면 타이머를 정리하고 더 재시도하지 않는다', async () => {
     vi.useFakeTimers();
     try {
       let calls = 0;
@@ -138,11 +200,17 @@ describe('withRetry', () => {
         }
       })();
 
+      // 첫 실패 후 대기 중간까지 진행한 뒤 중단한다.
+      await vi.advanceTimersByTimeAsync(100);
+      expect(calls).toBe(1);
+
+      const timersBeforeAbort = vi.getTimerCount();
       controller.abort();
       await vi.advanceTimersByTimeAsync(0);
       await done;
 
       expect(calls).toBe(1);
+      expect(vi.getTimerCount()).toBe(timersBeforeAbort - 1);
       expect(classifyProviderError(caught)).toBe('server');
     } finally {
       vi.useRealTimers();

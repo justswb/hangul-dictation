@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { RawMessageStreamEvent } from '@anthropic-ai/sdk/resources';
 import { toTextChunks, type AnthropicStream } from './claude.ts';
 import { toEvents } from '../stream.ts';
+import { withRetry } from '../errors.ts';
 
 function textDelta(text: string): RawMessageStreamEvent {
   return {
@@ -9,6 +10,13 @@ function textDelta(text: string): RawMessageStreamEvent {
     index: 0,
     delta: { type: 'text_delta', text },
   } as RawMessageStreamEvent;
+}
+
+function messageDelta(stopReason: string): RawMessageStreamEvent {
+  return {
+    type: 'message_delta',
+    delta: { stop_reason: stopReason },
+  } as unknown as RawMessageStreamEvent;
 }
 
 function fakeStream(events: RawMessageStreamEvent[], abort = vi.fn()): AnthropicStream {
@@ -82,5 +90,37 @@ describe('claude toTextChunks', () => {
 
     resolveSecond?.();
     await gen.return(undefined);
+  });
+
+  it('message_delta.stop_reason === "refusal" → ProviderError(refusal)를 던진다', async () => {
+    const stream = fakeStream([textDelta('일부'), messageDelta('refusal')]);
+
+    const chunks: string[] = [];
+    let caught: unknown;
+    try {
+      for await (const chunk of toTextChunks(stream)) chunks.push(chunk);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(chunks).toEqual(['일부']);
+    expect(caught).toMatchObject({ kind: 'refusal' });
+  });
+
+  it('텍스트 뒤 거절(message_delta) → withRetry + toEvents 파이프라인에서 stream_cut이 아니라 refusal, 재시도 없음', async () => {
+    let calls = 0;
+    const makeStream = () => {
+      calls += 1;
+      return toTextChunks(fakeStream([textDelta('일부'), messageDelta('refusal')]));
+    };
+
+    const events = [];
+    for await (const ev of toEvents(withRetry(makeStream, undefined, [500, 1000]))) events.push(ev);
+
+    expect(events).toEqual([
+      { t: 'text', v: '일부' },
+      { t: 'error', kind: 'refusal' },
+    ]);
+    expect(calls).toBe(1);
   });
 });
