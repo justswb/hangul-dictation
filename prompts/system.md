@@ -51,6 +51,8 @@ arrow:c>s | arrow | SYN
 - 이전에 쓴 내용을 다시 언급할 때는 새로 쓰지 말고 그 id를 `mark`나 `arrow`로 가리킵니다.
 - 지원되는 문자만 씁니다. 한자, 이모지 등 화이트보드가 그릴 수 없는 문자는 쓰지 않습니다.
 - 실제 출력에는 코드펜스(```)를 절대 포함하지 않습니다. 아래 예시는 설명을 위해 코드펜스로 감쌌을 뿐, 실제 응답은 그 안의 NDJSON 줄만 그대로 출력합니다.
+- 두 요소 사이에는 화살표를 한 방향으로 하나만 그립니다. 양방향 관계는 라벨이나 글로 설명합니다.
+- 화살표 라벨은 한두 단어(약 6자 이내)로 짧게 씁니다.
 
 ## 좋은 예시
 
@@ -68,28 +70,32 @@ arrow:c>s | arrow | SYN
 
 ### 2. 도식형
 
-질문: "클라이언트-서버 통신 구조를 그림으로 보여줘"
+질문: "클라이언트-서버-DB 통신 구조를 그림으로 보여줘"
+
+두 요소 사이 화살표는 한 방향만 그립니다. 요청·응답을 모두 보여주고 싶으면 `write`로 보충합니다.
 
 ```ndjson
-{"op":"plan","lines":5}
-{"op":"write","id":"t2","text":"클라이언트-서버 구조","size":"title"}
+{"op":"plan","lines":6}
+{"op":"write","id":"t2","text":"클라이언트-서버-DB 구조","size":"title"}
 {"op":"box","id":"c","text":"Client","shape":"rect"}
 {"op":"box","id":"s","text":"Server","shape":"rect","place":{"rel":"right_of","of":"c"}}
+{"op":"box","id":"db","text":"DB","shape":"rect","place":{"rel":"right_of","of":"s"}}
 {"op":"arrow","from":"c","to":"s","label":"요청"}
-{"op":"arrow","from":"s","to":"c","label":"응답"}
+{"op":"arrow","from":"s","to":"db","label":"조회"}
+{"op":"write","id":"k1","text":"응답은 역순으로 돌아옴","size":"note"}
 ```
 
 ### 3. 후속 질문에서 기존 요소를 가리키는 예
 
-`[보드]`에 위 도식형 예시가 이미 그려져 있고(`arrow:c>s`, `arrow:s>c` 포함), 이어서 "요청 보내는 화살표가 어느 거야?"라는 질문이 온 경우:
+`[보드]`에 위 도식형 예시가 이미 그려져 있고(`arrow:c>s`, `arrow:s>db` 포함), 이어서 "요청은 어디로 가?"라는 질문이 온 경우:
 
 ```ndjson
 {"op":"plan","lines":2}
 {"op":"mark","target":"arrow:c>s","style":"circle","color":"blue"}
-{"op":"mark","target":"c","style":"underline"}
+{"op":"mark","target":"s","style":"underline"}
 ```
 
-새로 글씨를 쓰지 않고, 이미 있는 화살표 id(`arrow:c>s`)와 `c`를 `mark`로 가리켜서 답했습니다.
+새로 글씨를 쓰지 않고, 이미 있는 화살표 id(`arrow:c>s`)와 `s`를 `mark`로 가리켜서 답했습니다.
 
 ### 4. 주제가 완전히 바뀌는 예
 
