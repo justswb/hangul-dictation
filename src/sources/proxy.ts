@@ -72,13 +72,34 @@ export function createProxyOpSource({ baseUrl, provider }: { baseUrl: string; pr
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-    let pending: Op[] = [];
+    const pendingOps: Op[] = [];
     const parser = createNdjsonParser({
-      onOp: (op) => pending.push(op),
+      onOp: (op) => pendingOps.push(op),
       onInvalid: () => {
         // 잘못된 op 줄은 무시한다 (docs/errors.md).
       },
     });
+
+    /** 한 줄을 처리해 op 이벤트를 내보내고, error/done을 만나면 'stop'을 돌려준다. */
+    function* handleLine(line: string): Generator<OpEvent, 'continue' | 'stop'> {
+      if (line.trim() === '') return 'continue';
+
+      const proxyLine = parseProxyLine(line);
+      if (proxyLine === null) return 'continue';
+
+      if (proxyLine.t === 'text') {
+        pendingOps.length = 0;
+        parser.push(proxyLine.v);
+        for (const op of pendingOps) yield { type: 'op', op };
+        return 'continue';
+      }
+      if (proxyLine.t === 'error') {
+        yield { type: 'error', error: { kind: toErrorKind(proxyLine.kind) } };
+        return 'stop';
+      }
+      yield { type: 'done' };
+      return 'stop';
+    }
 
     try {
       while (true) {
@@ -98,25 +119,23 @@ export function createProxyOpSource({ baseUrl, provider }: { baseUrl: string; pr
           const line = buffer.slice(0, newlineIndex);
           buffer = buffer.slice(newlineIndex + 1);
           newlineIndex = buffer.indexOf('\n');
-          if (line.trim() === '') continue;
-
-          const proxyLine = parseProxyLine(line);
-          if (proxyLine === null) continue;
-
-          if (proxyLine.t === 'text') {
-            pending = [];
-            parser.push(proxyLine.v);
-            for (const op of pending) yield { type: 'op', op };
-          } else if (proxyLine.t === 'error') {
-            yield { type: 'error', error: { kind: toErrorKind(proxyLine.kind) } };
-            return;
-          } else {
-            yield { type: 'done' };
-            return;
-          }
+          const outcome = yield* handleLine(line);
+          if (outcome === 'stop') return;
         }
 
-        if (chunk.done) return;
+        if (chunk.done) {
+          // 줄바꿈 없이 남은 마지막 줄도 한 줄로 처리한다.
+          const trailing = buffer;
+          buffer = '';
+          if (trailing.trim() !== '') {
+            const outcome = yield* handleLine(trailing);
+            if (outcome === 'stop') return;
+          }
+          // done/error 이벤트 없이 스트림이 끝났다 — 소비 측이 무한 대기하지
+          // 않도록 stream_cut 오류를 낸다.
+          yield { type: 'error', error: { kind: 'stream_cut' } };
+          return;
+        }
       }
     } finally {
       reader.releaseLock();

@@ -21,6 +21,23 @@ function fakeResponse(lines: string[], { ok = true }: { ok?: boolean } = {}): Re
   return { ok, body } as unknown as Response;
 }
 
+/** chunks를 있는 그대로(줄바꿈을 붙이지 않고) 흘려보내는 가짜 fetch Response를 만든다. */
+function fakeRawResponse(chunks: string[], { ok = true }: { ok?: boolean } = {}): Response {
+  const encoder = new TextEncoder();
+  let i = 0;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (i >= chunks.length) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(encoder.encode(chunks[i]));
+      i += 1;
+    },
+  });
+  return { ok, body } as unknown as Response;
+}
+
 async function collect(iterable: AsyncIterable<OpEvent>): Promise<OpEvent[]> {
   const events: OpEvent[] = [];
   for await (const ev of iterable) events.push(ev);
@@ -107,5 +124,34 @@ describe('createProxyOpSource', () => {
     expect(capturedSignal?.aborted).toBe(false);
     source.cancel();
     expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  it('마지막 줄에 줄바꿈이 없어도 정상 처리한다', async () => {
+    fetchMock.mockResolvedValue(
+      fakeRawResponse([
+        `${JSON.stringify({ t: 'text', v: '{"op":"plan","lines":1}\n' })}\n`,
+        // 마지막 청크에 줄바꿈이 없다.
+        JSON.stringify({ t: 'done' }),
+      ]),
+    );
+
+    const source = createProxyOpSource({ baseUrl: 'http://localhost:8787', provider: 'claude' });
+    const events = await collect(source.start(req));
+
+    expect(events).toEqual([{ type: 'op', op: { op: 'plan', lines: 1 } }, { type: 'done' }]);
+  });
+
+  it('done/error 없이 스트림이 끝나면 stream_cut 오류 1개를 낸다', async () => {
+    fetchMock.mockResolvedValue(
+      fakeRawResponse([`${JSON.stringify({ t: 'text', v: '{"op":"plan","lines":1}\n' })}\n`]),
+    );
+
+    const source = createProxyOpSource({ baseUrl: 'http://localhost:8787', provider: 'claude' });
+    const events = await collect(source.start(req));
+
+    expect(events).toEqual([
+      { type: 'op', op: { op: 'plan', lines: 1 } },
+      { type: 'error', error: { kind: 'stream_cut' } },
+    ]);
   });
 });

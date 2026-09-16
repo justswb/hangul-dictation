@@ -23,7 +23,11 @@ export function buildMessages(body: Pick<AskBody, 'question' | 'history' | 'page
 
   for (const turn of body.history) {
     messages.push({ role: 'user', content: turn.question });
-    messages.push({ role: 'assistant', content: turn.ops.join('\n') });
+    // ops가 비어 있으면(오류·중단으로 아무것도 못 그린 턴) assistant content가
+    // 빈 문자열이 되어 Anthropic API가 400으로 거부한다. 시스템 프롬프트 규칙
+    // "첫 줄은 plan"과도 맞는 유효한 NDJSON 한 줄로 채운다.
+    const content = turn.ops.length > 0 ? turn.ops.join('\n') : '{"op":"plan","lines":0}';
+    messages.push({ role: 'assistant', content });
   }
 
   messages.push({ role: 'user', content: `${body.pageSummary}\n[질문]\n${body.question}` });

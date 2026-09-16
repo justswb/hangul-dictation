@@ -24,4 +24,17 @@ describe('buildMessages', () => {
 
     expect(messages).toEqual([{ role: 'user', content: '\n[질문]\nTCP란?' }]);
   });
+
+  it('ops가 빈 턴(오류·중단으로 못 그린 턴)이어도 assistant content가 비어 있지 않다', () => {
+    const messages = buildMessages({
+      question: '다음 질문',
+      pageSummary: '',
+      history: [{ question: '실패한 질문', ops: [] }],
+    });
+
+    const assistantMessage = messages.find((m) => m.role === 'assistant');
+    expect(assistantMessage).toBeDefined();
+    expect(assistantMessage?.content).not.toBe('');
+    expect(assistantMessage?.content).toBe('{"op":"plan","lines":0}');
+  });
 });
