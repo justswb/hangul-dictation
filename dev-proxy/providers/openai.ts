@@ -10,12 +10,38 @@
  * (README 60~103, 233~252줄; https://platform.openai.com/docs/api-reference/responses).
  * 텍스트 델타는 `type: 'response.output_text.delta'`, `delta: string` 형태의
  * `ResponseTextDeltaEvent`로 온다 (`node_modules/openai/resources/responses/responses.d.ts`).
+ *
+ * T30(이슈 #36):
+ * - 거절 텍스트는 `response.refusal.delta`/`response.refusal.done` 이벤트로 온다
+ *   (`responses.d.ts` 5925~5980행) — 텍스트가 아니므로 `ProviderError('refusal')`로
+ *   던져 `dev-proxy/stream.ts`가 `error` 이벤트로 바꾸게 한다.
+ * - T28 리뷰 결함 수정: 스트림 루프가 `response.output_text.delta` 외 이벤트를 모두
+ *   무시해서, 스트림이 텍스트 델타 없이 `error`(`ResponseErrorEvent`, 2408~2429행)·
+ *   `response.failed`(`ResponseFailedEvent`, 2433~2446행)·`response.incomplete`
+ *   (`ResponseIncompleteEvent`, 3266~3279행)로 끝나도 제너레이터가 그냥 끝나 버려
+ *   서버가 `done`을 보내는 문제가 있었다. 이제 이 세 이벤트를 만나면 공통 오류로
+ *   던진다. `ResponseError.code`(2367~2375행, 고정된 값 목록)로 판별 가능한
+ *   범위에서 `rate_limit`/`refusal`로 나누고, 그 밖에는 `server`로 기본 처리한다
+ *   (메시지 문자열이 아니라 구조화된 `code` 값으로만 판별).
+ * - SDK 자체 재시도는 `dev-proxy/errors.ts`의 재시도와 합쳐 과도해지지 않도록
+ *   `maxRetries: 0`으로 끈다(옵션 근거: `node_modules/openai/src/client.ts` 394, 504행).
  */
 import { readFileSync } from 'node:fs';
 import OpenAI from 'openai';
 import type { ResponseStreamEvent } from 'openai/resources/responses/responses';
 import { SYSTEM_PROMPT_PATH } from '../config.ts';
 import { buildMessages, type AskBody } from '../build-messages.ts';
+import { ProviderError, type AppErrorKind } from '../errors.ts';
+
+/** OpenAI 최상위 `error` 이벤트·`response.failed`의 `Response.error.code` 분류. */
+const RATE_LIMIT_ERROR_CODES: ReadonlySet<string> = new Set(['rate_limit_exceeded']);
+const REFUSAL_ERROR_CODES: ReadonlySet<string> = new Set(['bio_policy', 'misalignment_policy_violation']);
+
+function classifyResponseErrorCode(code: string | null | undefined): AppErrorKind {
+  if (code && RATE_LIMIT_ERROR_CODES.has(code)) return 'rate_limit';
+  if (code && REFUSAL_ERROR_CODES.has(code)) return 'refusal';
+  return 'server';
+}
 
 function readSystemPrompt(): string {
   try {
@@ -42,6 +68,15 @@ export async function* toTextChunks(stream: OpenAIStream, signal?: AbortSignal):
     for await (const event of stream) {
       if (event.type === 'response.output_text.delta') {
         yield event.delta;
+      } else if (event.type === 'response.refusal.delta' || event.type === 'response.refusal.done') {
+        throw new ProviderError('refusal');
+      } else if (event.type === 'error') {
+        throw new ProviderError(classifyResponseErrorCode(event.code));
+      } else if (event.type === 'response.failed') {
+        throw new ProviderError(classifyResponseErrorCode(event.response.error?.code));
+      } else if (event.type === 'response.incomplete') {
+        const reason = event.response.incomplete_details?.reason;
+        throw new ProviderError(reason === 'content_filter' ? 'refusal' : 'server');
       }
     }
   } finally {
@@ -52,7 +87,7 @@ export async function* toTextChunks(stream: OpenAIStream, signal?: AbortSignal):
 export async function* streamText(
   req: AskBody,
   signal?: AbortSignal,
-  client: OpenAI = new OpenAI(),
+  client: OpenAI = new OpenAI({ maxRetries: 0 }),
 ): AsyncGenerator<string> {
   const model = process.env.OPENAI_MODEL;
   if (!model) {

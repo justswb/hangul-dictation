@@ -8,7 +8,8 @@
  *
  * 요청 구성(메시지 배열)은 `build-messages.ts`, 제공자별 스트리밍은
  * `providers/*.ts`, 텍스트 조각→이벤트 변환은 `stream.ts`로 분리했고,
- * 이 파일은 HTTP 배선과 provider 선택만 담당한다.
+ * 이 파일은 HTTP 배선과 provider 선택만 담당한다. 첫 텍스트 전 오류의 재시도는
+ * `errors.ts`의 `withRetry`를 연결만 한다(T30).
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { ALLOWED_ORIGIN, PORT } from './config.ts';
@@ -17,6 +18,7 @@ import { streamText as claudeStreamText } from './providers/claude.ts';
 import { streamText as openaiStreamText } from './providers/openai.ts';
 import type { StreamText } from './providers/types.ts';
 import { toEvents } from './stream.ts';
+import { withRetry } from './errors.ts';
 
 const PROVIDERS: Record<string, StreamText> = {
   claude: claudeStreamText,
@@ -83,7 +85,9 @@ async function handleAsk(req: IncomingMessage, res: ServerResponse): Promise<voi
   const controller = new AbortController();
   req.on('close', () => controller.abort());
 
-  for await (const event of toEvents(streamText(parsed, controller.signal))) {
+  const chunks = withRetry(() => streamText(parsed, controller.signal), controller.signal);
+
+  for await (const event of toEvents(chunks)) {
     res.write(`${JSON.stringify(event)}\n`);
   }
   res.end();
