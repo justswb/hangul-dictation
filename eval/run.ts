@@ -20,6 +20,32 @@ import { askProxy, type Turn } from './proxy-client.ts';
 
 const EVAL_DIR = fileURLToPath(new URL('.', import.meta.url));
 
+/** 프록시에 연결할 수 없을 때(연결 거부 등) 던지는 오류. 사용자에게 보여줄 메시지를 담는다. */
+export class ProxyConnectionError extends Error {}
+
+/** fetch가 던진 오류가 "서버에 연결할 수 없음"류인지 판별한다(응답 자체의 오류와 구분). */
+function isConnectionFailure(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.message.includes('fetch failed')) return true;
+  const cause = (err as { cause?: unknown }).cause;
+  const code = cause && typeof cause === 'object' && 'code' in cause ? (cause as { code?: unknown }).code : undefined;
+  return code === 'ECONNREFUSED' || code === 'ECONNRESET' || code === 'ENOTFOUND';
+}
+
+/** askProxy를 감싸 연결 실패를 사용자용 메시지의 ProxyConnectionError로 바꾼다. */
+async function askProxyOrThrow(options: Parameters<typeof askProxy>[0]): ReturnType<typeof askProxy> {
+  try {
+    return await askProxy(options);
+  } catch (err) {
+    if (isConnectionFailure(err)) {
+      throw new ProxyConnectionError(
+        `프록시에 연결할 수 없습니다: ${options.baseUrl}. \`podman compose up proxy\`로 먼저 실행하세요`,
+      );
+    }
+    throw err;
+  }
+}
+
 /** 질문 파일의 한 줄. `isFollowup`이면 원문에서 `>`와 공백을 뗀 텍스트다. */
 type QuestionLine = { text: string; isFollowup: boolean };
 
@@ -113,7 +139,7 @@ async function runChain({
 
   for (const { text: question, isFollowup } of chain) {
     const pageBefore = page;
-    const result = await askProxy({
+    const result = await askProxyOrThrow({
       baseUrl,
       provider,
       question,
@@ -278,7 +304,11 @@ async function main(): Promise<void> {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((err) => {
-    console.error(err);
+    if (err instanceof ProxyConnectionError) {
+      console.error(err.message);
+    } else {
+      console.error(err);
+    }
     process.exitCode = 1;
   });
 }

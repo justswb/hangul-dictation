@@ -17,7 +17,7 @@ HTTP 요청의 흐름을 도식으로 그려줘
 정렬 알고리즘 중 퀵정렬과 병합정렬을 비교해줘
 REST API와 GraphQL의 차이를 비교해줘
 클라이언트-서버 구조를 도식으로 설명해줘
-로드밸런서의 역할을 도식으로 그려줘
+로드밸런서가 무엇인지 설명해줘
 Explain what a binary search tree is
 Explain how a hash map works internally
 Explain what memoization means in dynamic programming

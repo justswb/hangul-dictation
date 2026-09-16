@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { formatTimestamp, parseQuestions, renderMarkdown, runEval, takeFirstN } from './run.ts';
+import { formatTimestamp, parseQuestions, ProxyConnectionError, renderMarkdown, runEval, takeFirstN } from './run.ts';
 
 describe('parseQuestions', () => {
   it('빈 줄을 건너뛰고 `>`로 시작하는 줄을 앞 질문에 이어붙인다', () => {
@@ -146,5 +146,23 @@ describe('runEval', () => {
     } finally {
       started.server.close();
     }
+  });
+
+  it('프록시가 꺼져 있으면(닫힌 포트) 친절한 연결 오류로 실패한다', async () => {
+    // 포트를 확보한 뒤 바로 닫아, 아무도 듣지 않는 포트(연결 거부)를 만든다.
+    const probe = createServer(() => {});
+    await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+    const address = probe.address();
+    const port = typeof address === 'object' && address ? address.port : 0;
+    await new Promise<void>((resolve) => probe.close(() => resolve()));
+
+    const closedBaseUrl = `http://127.0.0.1:${port}`;
+    const chains = parseQuestions(Q1);
+
+    await expect(runEval({ provider: 'claude', baseUrl: closedBaseUrl, chains })).rejects.toThrow(
+      new ProxyConnectionError(
+        `프록시에 연결할 수 없습니다: ${closedBaseUrl}. \`podman compose up proxy\`로 먼저 실행하세요`,
+      ),
+    );
   });
 });
