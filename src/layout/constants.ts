@@ -47,3 +47,17 @@ export const BOX_CURSOR_GAP = 20;
 
 /** box 라벨의 텍스트 크기. */
 export const BOX_TEXT_SIZE: TextSize = 'body';
+
+/** 도식 상수 (T22). */
+
+/** 화살표 양 끝을 대상 bbox 경계에서 더 띄우는 간격(px). */
+export const ARROW_END_GAP = 6;
+
+/** 화살표 라벨과 화살표 선분 사이 간격(px). */
+export const ARROW_LABEL_GAP = 8;
+
+/** 화살표 라벨의 텍스트 크기. */
+export const ARROW_LABEL_TEXT_SIZE: TextSize = 'note';
+
+/** mark 강조의 기본 색. */
+export const MARK_DEFAULT_COLOR: Color = 'red';
