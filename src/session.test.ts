@@ -19,9 +19,12 @@ function createFakeAnimator() {
     },
     stop() {
       calls.push('stop');
+      // 실제 애니메이터도 큐를 비우므로 남은 그룹은 완료 알림이 오지 않는다.
+      enqueued.length = 0;
     },
     clear() {
       calls.push('clear');
+      enqueued.length = 0;
     },
     onGroupDone(cb) {
       groupDone.push(cb);
@@ -194,6 +197,50 @@ describe('createSession', () => {
     const lastEnqueue = t.calls.lastIndexOf(`enqueue:${t.enqueued.at(-1)?.groupId ?? ''}`);
     expect(clearIndex).toBeGreaterThanOrEqual(0);
     expect(clearIndex).toBeLessThan(lastEnqueue);
+  });
+
+  it('넘침 write처럼 자신이 clearBefore를 내는 op도 clear() 다음에 enqueue된다', async () => {
+    const t = setup();
+
+    t.session.send('질문');
+    await flush();
+
+    // 페이지가 찰 때까지 본문 줄을 계속 보낸다. 넘치는 순간 layoutOp가
+    // clearBefore를 돌려주므로, 그 op의 enqueue보다 clear가 먼저여야 한다.
+    let overflowed = false;
+    for (let i = 0; i < 40 && !overflowed; i += 1) {
+      await t.emit({ type: 'op', op: { op: 'write', id: `w${i}`, text: `줄 ${i}`, size: 'body' } });
+      t.finishNext();
+      overflowed = t.calls.includes('clear');
+    }
+
+    expect(overflowed).toBe(true);
+    const clearIndex = t.calls.indexOf('clear');
+    // clear 바로 다음 호출이 넘친 op의 enqueue다 (그 사이에 다른 호출이 없다).
+    expect(t.calls[clearIndex + 1]).toMatch(/^enqueue:/);
+    // 넘친 op는 빈 페이지에 다시 배치되어 그 한 줄만 남는다.
+    expect(t.session.getPage().elements).toHaveLength(1);
+  });
+
+  it('clearBefore면 아직 그려지지 않은 그룹의 이력 줄은 버려진다', async () => {
+    const t = setup();
+
+    t.session.send('질문');
+    await flush();
+
+    // 첫 op는 그리는 중(완료 알림 없음) 상태로 두고 newpage를 받는다.
+    await t.emit({ type: 'op', op: OPS[0] as Op });
+    await t.emit({ type: 'op', op: { op: 'newpage' } });
+
+    expect(t.calls).toEqual([`enqueue:t1:0`, 'clear']);
+
+    await t.emit({ type: 'done' });
+    t.finishAll();
+
+    // 그려지다 지워진 첫 op는 이력에 없고, newpage 줄만 남는다.
+    expect(t.session.getHistory()).toEqual([
+      { question: '질문', ops: [JSON.stringify({ op: 'newpage' })] },
+    ]);
   });
 
   it('지우기는 이력과 페이지를 비운다', async () => {

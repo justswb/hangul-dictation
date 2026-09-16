@@ -24,15 +24,33 @@ const question = params.get('q') ?? 'TCP 3-way handshake를 설명해 줘';
 
 const source = createFakeOpSource({ load: fixtureLoader(fixture ?? 'tcp') });
 
+/** 제공자·키 입력 화면은 이후 티켓에서 붙인다. 그때까지의 안내 문구. */
+const PROVIDER_NOTICE = '제공자 설정 화면은 아직 없습니다. 키를 확인해 주세요.';
+
 let session: Session | null = null;
+/** 지금 화면에 떠 있는 오류 문구 (없으면 null). */
+let currentError: string | null = null;
+
+function setError(msg: string | null): void {
+  currentError = msg;
+  shell.setError(msg);
+}
+
+/** 제공자 화면 대신 안내만 띄운다. 이미 오류 문구가 있으면 덮어쓰지 않는다. */
+function showProviderNotice(): void {
+  if (currentError !== null) return;
+  setError(PROVIDER_NOTICE);
+}
 
 const shell = createShell(app, {
   onSend: (text) => session?.send(text),
   onStop: () => session?.stop(),
   onClear: () => session?.clear(),
-  onProvider: () => shell.setError('제공자 설정 화면은 아직 없습니다.'),
+  onProvider: () => showProviderNotice(),
 });
 
+// 기본 속도(900px/s)로는 픽스처 한 판을 그리는 데 스크린샷 도구의 15초 제한을
+// 넘기므로, 데모·스크린샷용으로 빠르게 그린다.
 const scheduler = createScheduler({ speed: 4000 });
 const animator = createAnimator(shell.canvas, scheduler);
 
@@ -47,8 +65,8 @@ session = createSession({
   animator,
   shell: {
     setState: handleState,
-    setError: (msg) => shell.setError(msg),
-    onProvider: () => shell.setError('제공자 설정 화면은 아직 없습니다. 키를 확인해 주세요.'),
+    setError,
+    onProvider: showProviderNotice,
   },
 });
 
