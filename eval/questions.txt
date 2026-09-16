@@ -1,0 +1,30 @@
+이진 탐색 알고리즘을 설명해줘
+> 시간 복잡도는 어떻게 되나요
+재귀 함수가 무엇인지 설명해줘
+운영체제의 프로세스와 스레드를 설명해줘
+데이터베이스 인덱스가 무엇인지 설명해줘
+> 인덱스를 쓰면 왜 느려질 수도 있나요
+캐시 메모리의 동작 원리를 설명해줘
+가비지 컬렉션이 무엇인지 설명해줘
+> 세대별 GC는 어떻게 동작하나요
+해시 테이블의 동작 원리를 설명해줘
+TCP 3-way 핸드셰이크를 설명해줘
+딥러닝의 역전파가 무엇인지 설명해줘
+블록체인이 무엇인지 설명해줘
+스택과 큐의 차이를 비교해줘
+TCP와 UDP의 차이를 도식으로 비교해줘
+HTTP 요청의 흐름을 도식으로 그려줘
+정렬 알고리즘 중 퀵정렬과 병합정렬을 비교해줘
+REST API와 GraphQL의 차이를 비교해줘
+클라이언트-서버 구조를 도식으로 설명해줘
+로드밸런서의 역할을 도식으로 그려줘
+Explain what a binary search tree is
+Explain how a hash map works internally
+Explain what memoization means in dynamic programming
+> How is it different from plain recursion
+Explain what a race condition is
+Compare monolithic and microservices architectures
+Compare SQL and NoSQL databases
+Diagram the request flow of a load balancer
+Diagram how a CDN serves cached content
+> What happens on a cache miss

@@ -12,7 +12,8 @@
     "validate:jamo": "node scripts/validate-jamo.ts",
     "check": "tsc --noEmit && eslint . && vitest run",
     "shot": "node scripts/shot.ts",
-    "fixtures:expected": "node scripts/fixtures-expected.ts"
+    "fixtures:expected": "node scripts/fixtures-expected.ts",
+    "eval": "node eval/run.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
