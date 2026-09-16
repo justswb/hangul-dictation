@@ -37,6 +37,8 @@ export function layoutArrow(op: ArrowOp, page: PageState): { placed: PlacedEleme
   const fromElement = page.elements.find((element) => element.id === op.from);
   const toElement = page.elements.find((element) => element.id === op.to);
   if (!fromElement || !toElement) return null;
+  // from과 to가 같으면 두 중심이 겹쳐 방향 벡터가 0이 되어 좌표가 NaN이 된다 (티켓 범위 밖 방어).
+  if (op.from === op.to) return null;
 
   const fromCenter = center(fromElement.bbox);
   const toCenter = center(toElement.bbox);
@@ -51,11 +53,6 @@ export function layoutArrow(op: ArrowOp, page: PageState): { placed: PlacedEleme
   const style = { color: DEFAULT_COLOR, width: STROKE_WIDTH.body, groupId: id };
 
   const strokes: DrawStroke[] = arrowStrokes(start, end, style);
-
-  let minX = Math.min(start.x, end.x);
-  let minY = Math.min(start.y, end.y);
-  let maxX = Math.max(start.x, end.x);
-  let maxY = Math.max(start.y, end.y);
 
   if (op.label) {
     const height = TEXT_HEIGHT[ARROW_LABEL_TEXT_SIZE];
@@ -73,12 +70,15 @@ export function layoutArrow(op: ArrowOp, page: PageState): { placed: PlacedEleme
     });
 
     for (const stroke of label.strokes) strokes.push({ ...stroke, groupId: id });
-
-    minX = Math.min(minX, labelX);
-    minY = Math.min(minY, labelY);
-    maxX = Math.max(maxX, labelX + textWidth);
-    maxY = Math.max(maxY, labelY + height);
   }
+
+  // bbox는 화살촉(몸통보다 넓게 벌어질 수 있다)과 라벨 텍스트를 포함해 실제 획 점들로부터 계산한다.
+  const xs = strokes.flatMap((stroke) => stroke.points.map((p) => p.x));
+  const ys = strokes.flatMap((stroke) => stroke.points.map((p) => p.y));
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  const maxX = Math.max(...xs);
+  const maxY = Math.max(...ys);
 
   const placed: PlacedElement = {
     id,

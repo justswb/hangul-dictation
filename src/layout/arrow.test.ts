@@ -84,6 +84,42 @@ describe('layoutArrow 좌표', () => {
     expect(labelStrokes.map((s) => s.points)).toEqual(expected.strokes.map((s) => s.points));
   });
 
+  it('수평 화살표: bbox.h > 0이고 모든 획의 모든 점이 bbox 안에 들어온다 (화살촉이 몸통보다 옆으로 벌어짐)', () => {
+    const left = elementAt('a', { x: 100, y: 200, w: 100, h: 60 });
+    const right = elementAt('b', { x: 400, y: 200, w: 100, h: 60 });
+    const page = pageWith(left, right);
+
+    const { placed } = place(arrow('a', 'b'), page);
+
+    expect(placed.bbox.h).toBeGreaterThan(0);
+    for (const stroke of placed.strokes) {
+      for (const p of stroke.points) {
+        expect(p.x).toBeGreaterThanOrEqual(placed.bbox.x - 1e-9);
+        expect(p.x).toBeLessThanOrEqual(placed.bbox.x + placed.bbox.w + 1e-9);
+        expect(p.y).toBeGreaterThanOrEqual(placed.bbox.y - 1e-9);
+        expect(p.y).toBeLessThanOrEqual(placed.bbox.y + placed.bbox.h + 1e-9);
+      }
+    }
+  });
+
+  it('수직 화살표: bbox.w > 0 (화살촉이 몸통보다 옆으로 벌어짐)', () => {
+    const top = elementAt('a', { x: 100, y: 100, w: 80, h: 40 });
+    const bottomBox = elementAt('b', { x: 100, y: 300, w: 80, h: 40 });
+    const page = pageWith(top, bottomBox);
+
+    const { placed } = place(arrow('a', 'b'), page);
+
+    expect(placed.bbox.w).toBeGreaterThan(0);
+    for (const stroke of placed.strokes) {
+      for (const p of stroke.points) {
+        expect(p.x).toBeGreaterThanOrEqual(placed.bbox.x - 1e-9);
+        expect(p.x).toBeLessThanOrEqual(placed.bbox.x + placed.bbox.w + 1e-9);
+        expect(p.y).toBeGreaterThanOrEqual(placed.bbox.y - 1e-9);
+        expect(p.y).toBeLessThanOrEqual(placed.bbox.y + placed.bbox.h + 1e-9);
+      }
+    }
+  });
+
   it('groupId와 id가 "arrow:from>to"다', () => {
     const left = elementAt('a', { x: 100, y: 200, w: 100, h: 60 });
     const right = elementAt('b', { x: 400, y: 200, w: 100, h: 60 });
@@ -101,6 +137,13 @@ describe('layoutArrow 좌표', () => {
 
     expect(layoutArrow(arrow('a', 'nope'), page)).toBeNull();
     expect(layoutArrow(arrow('nope', 'a'), page)).toBeNull();
+  });
+
+  it('from과 to가 같으면 null (판단: 중심이 겹쳐 NaN이 되는 것을 막는 방어)', () => {
+    const left = elementAt('a', { x: 100, y: 200, w: 100, h: 60 });
+    const page = pageWith(left);
+
+    expect(layoutArrow(arrow('a', 'a'), page)).toBeNull();
   });
 
   it('cursorY를 바꾸지 않는다', () => {
