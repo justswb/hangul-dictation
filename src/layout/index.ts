@@ -58,8 +58,10 @@ function placeWithOverflow(place: Placer, page: PageState): LayoutResult {
   }
 
   const retry = place(emptyPage());
-  // 빈 페이지에서는 참조를 찾을 수 없어 null이 될 수 있다.
-  if (!retry) return { clearBefore: true, placed: [], page: emptyPage() };
+  // 빈 페이지에는 참조 요소가 없어 재배치가 실패할 수 있다. 이때 보드를 지우면
+  // 아무것도 그리지 않은 채 기존 내용만 사라지므로, 지우지 않고 op를 무시한다
+  // (docs/board-ops.md: 없는 id를 참조한 op는 무시).
+  if (!retry) return nothing(false, page);
   return { clearBefore: true, placed: [retry.placed], page: retry.page };
 }
 

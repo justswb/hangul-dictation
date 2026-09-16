@@ -138,6 +138,15 @@ describe('layoutOp write', () => {
     layoutOp(write('가나다'), page);
     expect(page).toEqual(before);
   });
+
+  it('넘쳐서 다시 배치하는 경로에서도 입력 페이지를 변경하지 않는다', () => {
+    const page = pageWithRemaining(1);
+    const before = { elements: [...page.elements], cursorY: page.cursorY };
+    const result = layoutOp(write('가나다라마 바사아자차 카타파하 '.repeat(20)), page);
+    expect(result.clearBefore).toBe(true);
+    expect(page).toEqual(before);
+    expect(page.elements).toHaveLength(1);
+  });
 });
 
 describe('layoutOp box', () => {
@@ -153,6 +162,21 @@ describe('layoutOp box', () => {
     const result = layoutOp(op, pageAt(BOTTOM_LIMIT - 10));
     expect(result.clearBefore).toBe(true);
     expect(only(result.placed).bbox.y).toBe(MARGIN);
+  });
+
+  it('하단 근처의 참조 옆에 놓는 box가 넘치면 지우지 않고 무시한다', () => {
+    // 빈 페이지에서 다시 배치하면 참조가 없어 실패한다. 보드를 지우면 아무것도
+    // 그리지 않은 채 기존 내용만 사라지므로 op를 무시해야 한다.
+    const anchor = element('a', { x: MARGIN, y: BOTTOM_LIMIT - 20, w: 100, h: 60 });
+    const page: PageState = { elements: [anchor], cursorY: BOTTOM_LIMIT - 20 };
+    const op: BoxOp = { op: 'box', id: 'b2', text: '목적어', shape: 'rect', place: { rel: 'right_of', of: 'a' } };
+
+    const result = layoutOp(op, page);
+
+    expect(result.clearBefore).toBe(false);
+    expect(result.placed).toEqual([]);
+    expect(result.page).toEqual(page);
+    expect(result.page.elements).toEqual([anchor]);
   });
 
   it('참조 id가 없으면 placed 0개, 페이지 그대로', () => {
