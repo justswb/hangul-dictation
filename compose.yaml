@@ -23,6 +23,8 @@ services:
     environment:
       # 값은 컴포즈가 호스트 환경변수에서 가져온다. 여기에 값을 적지 않는다.
       - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
+      - OPENAI_MODEL
     command: node dev-proxy/server.ts
 
   shot:
